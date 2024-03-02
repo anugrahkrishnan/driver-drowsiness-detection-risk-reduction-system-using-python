@@ -1,0 +1,43 @@
+import av
+import threading
+import streamlit as st
+from streamlit_webrtc import VideoHTMLAttributes, webrtc_streamer
+from detection import VideoFrameHandler
+
+#python -m streamlit run stream.py
+col1, col2 = st.columns(spec=[6, 2], gap="medium")
+
+with col1:
+    st.title("Drowsiness Detection")
+    with st.container():
+        c1, c2 = st.columns(spec=[1, 1])
+        with c1:
+            #The amount of time (in seconds) to wait before sounding the alarm.
+            WAIT_TIME = st.slider("Seconds To Wait:", 0.0, 5.0, 1.0, 0.25)
+
+        with c2:
+            #Lowest valid value of Eye Aspect Ratio. Ideal values [0.15, 0.2].
+            EAR_THRESH = st.slider("Eye Aspect Ratio Threshold:", 0.0, 0.4, 0.18, 0.01)
+
+thresholds = {
+    "EAR_THRESH": EAR_THRESH,
+    "WAIT_TIME": WAIT_TIME,
+}
+
+# For streamlit-webrtc
+video_handler = VideoFrameHandler()
+lock = threading.Lock()  # For thread-safe access & to prevent race-condition.
+
+def video_frame_callback(frame: av.VideoFrame):
+    frame = frame.to_ndarray(format="bgr24")  # Decode and convert frame to RGB
+    frame, play = video_handler.process(frame, thresholds)  # Process frame
+    return av.VideoFrame.from_ndarray(frame, format="bgr24")  # Encode and return BGR frame
+
+with col1:
+    ctx = webrtc_streamer(
+        key="drowsiness-detection",
+        video_frame_callback=video_frame_callback,
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},  # Add this to config for cloud deployment.
+        media_stream_constraints={"video": {"height": {"ideal": 480}}, },
+        video_html_attrs=VideoHTMLAttributes(autoPlay=True, controls=False, muted=False),
+    )
